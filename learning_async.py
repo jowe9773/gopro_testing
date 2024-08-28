@@ -3,7 +3,58 @@
 "import packages and modules"
 import sys
 import cv2
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import asyncio
 from functions import File_Functions, Video_Functions, Audio_Functions
+
+#Asyncronous function for parallel processing of frames and async merging
+async def process_and_merge_frames(captures, homo_mats, final_shape, compressed_shape, out_writer):
+    loop = asyncio.get_event_loop()
+    futures = []
+    count = 0 
+
+    with ProcessPoolExecutor() as executor:
+        while True:
+            tasks = []
+            
+            for i, cap in enumerate(captures):
+                ret, frame = cap.read()
+                if frame is None or frame.size == 0:
+                    print(f"Warning: Frame {i} is empty or could not be read.")
+                    continue  # Skip processing this frame
+
+                # Submit frame processing tasks to the executor
+                task = loop.run_in_executor(
+                    executor,
+                    vf.process_frame,
+                    frame,
+                    homo_mats[i],
+                    final_shape,
+                    compressed_shape
+                )
+                tasks.append(task)
+
+            # Wait for all tasks to complete
+            processed_frames = await asyncio.gather(*tasks)
+
+            # Merge frames and write to output
+            merged = cv2.hconcat(processed_frames)  # Merge the corrected frames together
+            out_writer.write(merged)  # Write the merged frame to new video
+
+            # Update count and break condition
+            count += 1 / frame_rates[0]
+            if count > LENGTH:
+                break
+
+            print(count)
+
+    # Release video capture and writer objects
+    for cap in captures:
+        cap.release()
+    out_writer.release()
+
+    # Close all OpenCV windows
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
@@ -101,34 +152,10 @@ if __name__ == "__main__":
 
     #Set start frames and counter to end video after the specified length of time
     start_time = START_TIME * 1000
-    count = 0   
+      
 
     for i, cap in enumerate(captures):
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time + time_offsets[i])
 
-    #Start reading frames and processing them:
-    print(captures)
-    print(captures[0])
-
-    while True and count <= LENGTH:
-        corrected_frames = []
-        for i, cap in enumerate(captures):
-            ret, frame = cap.read()
-            if frame is None or frame.size == 0:
-                print(f"Warning: Frame {i} is empty or could not be read.")
-                continue  # Skip processing this frame
-            corrected_frame = vf.process_frame(frame, homo_mats[i], final_shape, compressed_shape)
-            corrected_frames.append(corrected_frame)
-
-        merged = cv2.hconcat(corrected_frames)  #merge the four corrected frames together
-        out.write(merged)   #write the merged frame to new video
-
-        count += 1/frame_rates[0]
-        print(count)
-    
-    # Release video capture and writer objects
-    cap.release()
-    out.release()
-
-    # Close all OpenCV windows
-    cv2.destroyAllWindows()
+    # Start the asynchronous processing
+    asyncio.run(process_and_merge_frames(captures, homo_mats, final_shape, compressed_shape, out))
