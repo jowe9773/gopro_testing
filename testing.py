@@ -1,7 +1,7 @@
 #testing.py
 
 #LOAD NECCESARY PACKAGES AND MODULES
-import concurrent
+import concurrent.futures
 import csv
 import tkinter as tk
 from tkinter import filedialog
@@ -11,7 +11,6 @@ from scipy.signal import correlate
 from scipy.io import wavfile
 import cv2
 import numpy as np
-
 
 
 #FILE MANAGERS
@@ -80,6 +79,7 @@ def extract_audio(video_path):
         temp_audio_path = temp_audio_file.name
     audio.write_audiofile(temp_audio_path, codec='pcm_s16le')
     rate, audio_data = wavfile.read(temp_audio_path)
+    clip.reader.close()
     return rate, audio_data
 
 def find_time_offset(rate1, audio1, rate2, audio2):
@@ -135,6 +135,7 @@ def orthomosaic_video_umat(videos, gcps_list, offsets_list, output_dn, outname, 
     compressed_shape = tuple([int(s / compress_by) for s in final_shape])
     output_shape = (int(4 * compressed_shape[0]), compressed_shape[1])
 
+
     #choose a place to store output video
     output_fn = output_dn + "\\" + outname + ".mp4"
 
@@ -181,47 +182,43 @@ def orthomosaic_video_umat(videos, gcps_list, offsets_list, output_dn, outname, 
         uframe = cv2.UMat(frame)
         uframe1 = cv2.UMat(frame1)
         uframe2 = cv2.UMat(frame2)
-        uframe3 = cv2.UMat(frame3)
+        uframe3 = cv2.UMat(frame3)    
 
-        
+        def process_frame(frame, matrix, compressed_shape, final_shape):
+            corrected_frame = cv2.warpPerspective(frame, matrix, final_shape)
+            corrected_frame = cv2.resize(corrected_frame, compressed_shape)
+            return corrected_frame
 
-    def process_frame(frame, matrix, compressed_shape, final_shape):
-        corrected_frame = cv2.warpPerspective(frame, matrix, final_shape)
-        corrected_frame = cv2.resize(corrected_frame, compressed_shape)
-        return corrected_frame
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(process_frame, uframe, matrix, compressed_shape, final_shape),
+                executor.submit(process_frame, uframe1, matrix1, compressed_shape, final_shape),
+                executor.submit(process_frame, uframe2, matrix2, compressed_shape, final_shape),
+                executor.submit(process_frame, uframe3, matrix3, compressed_shape, final_shape)
+            ]
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [
-            executor.submit(process_frame, uframe, matrix, compressed_shape, final_shape),
-            executor.submit(process_frame, uframe1, matrix1, compressed_shape, final_shape),
-            executor.submit(process_frame, uframe2, matrix2, compressed_shape, final_shape),
-            executor.submit(process_frame, uframe3, matrix3, compressed_shape, final_shape)
-        ]
+            corrected_frames = [f.result() for f in futures]
 
-        corrected_frames = [f.result() for f in futures]
+            # Convert UMat back to numpy array for concatenation
+            corrected_frame = corrected_frames[0].get()
+            corrected_frame1 = corrected_frames[1].get()
+            corrected_frame2 = corrected_frames[2].get()
+            corrected_frame3 = corrected_frames[3].get()
 
+            #merge corrected frames
+            merged = cv2.hconcat([corrected_frame, corrected_frame1, corrected_frame2, corrected_frame3])
 
+            #write the merged frame to new video
+            out.write(merged)
 
-        # Convert UMat back to numpy array for concatenation
-        corrected_frame = corrected_frames[0].get()
-        corrected_frame1 = corrected_frames[1].get()
-        corrected_frame2 = corrected_frames[2].get()
-        corrected_frame3 = corrected_frames[3].get()
+        #move to next frame
+        ret, frame = cap.read()
+        ret1, frame1 = cap1.read()
+        ret2, frame2 = cap2.read()
+        ret3, frame3 = cap3.read()
 
-        #merge corrected frames
-        merged = cv2.hconcat([corrected_frame, corrected_frame1, corrected_frame2, corrected_frame3])
-
-        #write the merged frame to new video
-        out.write(merged)
-
-    #move to next frame
-    ret, frame = cap.read()
-    ret1, frame1 = cap1.read()
-    ret2, frame2 = cap2.read()
-    ret3, frame3 = cap3.read()
-
-    count = count + 1/fps
-    print(cap.get(cv2.CAP_PROP_POS_MSEC))
+        count = count + 1/fps
+        print(cap.get(cv2.CAP_PROP_POS_MSEC))
 
     # Release video capture and writer objects
     cap.release()
@@ -236,6 +233,8 @@ def orthomosaic_video_original(videos, gcps_list, offsets_list, output_dn, outna
 
     compressed_shape = tuple([int(s / compress_by) for s in final_shape])
     output_shape = (int(4 * compressed_shape[0]), compressed_shape[1])
+
+    #instantiate the orthomosaic tools module
 
     #choose a place to store output video
     output_fn = output_dn + "\\" + outname + ".mp4"
@@ -277,30 +276,31 @@ def orthomosaic_video_original(videos, gcps_list, offsets_list, output_dn, outna
     cap2.set(cv2.CAP_PROP_POS_MSEC,(start_time + offsets_list[2]))
     cap3.set(cv2.CAP_PROP_POS_MSEC,(start_time + offsets_list[3]))
 
-    # correct frames with warpPerspective
-    corrected_frame = cv2.warpPerspective(frame, matrix, final_shape)
-    corrected_frame = cv2.resize(corrected_frame, compressed_shape)
-    corrected_frame1 = cv2.warpPerspective(frame1, matrix1, final_shape)
-    corrected_frame1 = cv2.resize(corrected_frame1, compressed_shape)
-    corrected_frame2 = cv2.warpPerspective(frame2, matrix2, final_shape)
-    corrected_frame2 = cv2.resize(corrected_frame2, compressed_shape)
-    corrected_frame3 = cv2.warpPerspective(frame3, matrix3, final_shape)
-    corrected_frame3 = cv2.resize(corrected_frame3, compressed_shape)
+    while ret and ret1 and ret2 and ret3 and count <= length_s:
+        # correct frames with warpPerspective
+        corrected_frame = cv2.warpPerspective(frame, matrix, final_shape)
+        corrected_frame = cv2.resize(corrected_frame, compressed_shape)
+        corrected_frame1 = cv2.warpPerspective(frame1, matrix1, final_shape)
+        corrected_frame1 = cv2.resize(corrected_frame1, compressed_shape)
+        corrected_frame2 = cv2.warpPerspective(frame2, matrix2, final_shape)
+        corrected_frame2 = cv2.resize(corrected_frame2, compressed_shape)
+        corrected_frame3 = cv2.warpPerspective(frame3, matrix3, final_shape)
+        corrected_frame3 = cv2.resize(corrected_frame3, compressed_shape)
 
-    #merge corrected frames
-    merged = cv2.hconcat([corrected_frame, corrected_frame1, corrected_frame2, corrected_frame3])
+        #merge corrected frames
+        merged = cv2.hconcat([corrected_frame, corrected_frame1, corrected_frame2, corrected_frame3])
 
-    #write the merged frame to new video
-    out.write(merged)
+        #write the merged frame to new video
+        out.write(merged)
 
-    #move to next frame
-    ret, frame = cap.read()
-    ret1, frame1 = cap1.read()
-    ret2, frame2 = cap2.read()
-    ret3, frame3 = cap3.read()
+        #move to next frame
+        ret, frame = cap.read()
+        ret1, frame1 = cap1.read()
+        ret2, frame2 = cap2.read()
+        ret3, frame3 = cap3.read()
 
-    count = count + 1/fps
-    print(cap.get(cv2.CAP_PROP_POS_MSEC))
+        count = count + 1/fps
+        print(cap.get(cv2.CAP_PROP_POS_MSEC))
 
     # Release video capture and writer objects
     cap.release()
@@ -308,3 +308,51 @@ def orthomosaic_video_original(videos, gcps_list, offsets_list, output_dn, outna
 
     # Close all OpenCV windows
     cv2.destroyAllWindows()
+
+
+#RUN THE CODE AND COMPARE SPEEDS OF THE ORIGINAL VS UMAT
+#select videos and corresponding GCPS file
+video = load_fn("Video")
+video1 = load_fn("Video1")
+video2 = load_fn("Video2")
+video3 = load_fn("Video3")
+
+gcps = import_gcps()
+gcps1= import_gcps()
+gcps2 = import_gcps()
+gcps3 = import_gcps()
+
+#create lists to send to the function we made
+videos = [video, video1, video2, video3]
+print(videos)
+
+gcps_list = [gcps, gcps1, gcps2, gcps3]
+print(gcps_list)
+
+#time offsets between the videos (in ms)
+rate1, audio1  = extract_audio(videos[0])
+rate2, audio2 = extract_audio(videos[1])
+rate3, audio3 = extract_audio(videos[2])
+rate4, audio4 = extract_audio(videos[3])
+
+offset2 = find_time_offset(rate1, audio1, rate2, audio2)
+offset3 = find_time_offset(rate2, audio2, rate3, audio3) + offset2
+offset4 = find_time_offset(rate3, audio3, rate4, audio4) + offset3
+
+
+offsets = [0, offset2*-1000, offset3*-1000, offset4*-1000]
+print(offsets)
+
+#choose start time for first video and length to process
+start = 56
+length = 10
+
+#choose compression and output speed
+compress = 4
+speed = 1
+
+#output video file information
+output_path = load_dn("Choose a directory to store video in")
+outn = "test"
+
+video = orthomosaic_video_original(videos, gcps_list, offsets, output_path, outn + "original", start_time_s = start, length_s = length, compress_by = compress, out_speed = speed)

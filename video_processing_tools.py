@@ -47,7 +47,7 @@ def orthomosaic_video(videos, gcps_list, offsets_list, output_dn, outname, start
 
     #set up start time and count to point to where to start and when to end processing
     start_time = start_time_s *1000
-    count = 0
+    count = 0   
 
     #start reading frames
     ret, frame = cap.read()
