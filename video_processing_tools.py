@@ -86,15 +86,6 @@ def orthomosaic_video(videos, gcps_list, offsets_list, output_dn, outname, start
 
             corrected_frames = [f.result() for f in futures]
 
-            """# correct frames with warpPerspective
-            corrected_frame = cv2.warpPerspective(uframe, matrix, final_shape)
-            corrected_frame = cv2.resize(corrected_frame, compressed_shape)
-            corrected_frame1 = cv2.warpPerspective(uframe1, matrix1, final_shape)
-            corrected_frame1 = cv2.resize(corrected_frame1, compressed_shape)
-            corrected_frame2 = cv2.warpPerspective(uframe2, matrix2, final_shape)
-            corrected_frame2 = cv2.resize(corrected_frame2, compressed_shape)
-            corrected_frame3 = cv2.warpPerspective(uframe3, matrix3, final_shape)
-            corrected_frame3 = cv2.resize(corrected_frame3, compressed_shape)"""
 
             # Convert UMat back to numpy array for concatenation
             corrected_frame = corrected_frames[0].get()

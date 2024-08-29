@@ -214,11 +214,21 @@ class Video_Functions():
                 ret, frame = cap.read()
                 if frame is None or frame.size == 0:
                     print(f"Warning: Frame {i} is empty or could not be read.")
-                    continue  # Skip processing this frame\
+                    continue  # Skip processing this frame
 
-                corrected_frame = cv2.warpPerspective(frame, homo_mats[i], final_shape)
+                # Convert frames to UMat
+                uframe = cv2.UMat(frame)
+
+                #Correct the frame
+                corrected_frame = cv2.warpPerspective(uframe, homo_mats[i], final_shape)
                 corrected_frame = cv2.resize(corrected_frame, compressed_shape)
                 corrected_frames.append(corrected_frame)
+
+            # Convert UMat back to numpy array for concatenation
+            for i, corrected_frame in enumerate(corrected_frames):
+                corrected_frame = corrected_frame.get()
+
+
 
             merged = cv2.hconcat(corrected_frames)  #merge the four corrected frames together
             out.write(merged)   #write the merged frame to new video

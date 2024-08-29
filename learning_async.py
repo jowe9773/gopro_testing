@@ -49,18 +49,18 @@ if __name__ == "__main__":
     audio_data = []
     loop = asyncio.get_event_loop()
     rates_and_audios = loop.run_until_complete(af.extract_all_audios(videos))
-    print(rates_and_audios)
 
     for i, tup in enumerate(rates_and_audios):
-        print(i)
-        print(tup)
         rate_data.append(tup[0])
         audio_data.append(tup[1])
 
+    print("FPS for video streams:")
     print(rate_data)
 
     #find time offsets
     time_offsets = af.find_all_offsets(rate_data, audio_data)
+
+    print("Time offsets for video streams:")
     print(time_offsets)
 
 
