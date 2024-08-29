@@ -175,70 +175,60 @@ class Video_Functions():
         return uframe
 
     def orthomosaicing(self, captures, time_offsets, homo_mats, out_vid_dn, OUT_NAME, SPEED, START_TIME, LENGTH, COMPRESSION):
-            #Describe shape
+        # Describe shape
         final_shape = [2438, 4000]
-        compressed_shape = (int(final_shape[0]/COMPRESSION), int(final_shape[1]/COMPRESSION))
-        output_shape = (compressed_shape[0]*4, compressed_shape[1])
+        compressed_shape = (int(final_shape[0] / COMPRESSION), int(final_shape[1] / COMPRESSION))
+        output_shape = (compressed_shape[0] * 4, compressed_shape[1])
         print("out Shape: ", output_shape)
 
-        #Find frame rates for the videos and ensure that they match
-        frame_rates = []
-        for i, cap in enumerate(captures):
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            frame_rates.append(fps)
-
-        fps_check = all(x == frame_rates[0] for x in frame_rates) #ensures matching fps for all videos
-
-        if fps_check is True:
+        # Find frame rates for the videos and ensure that they match
+        frame_rates = [cap.get(cv2.CAP_PROP_FPS) for cap in captures]
+        if all(fps == frame_rates[0] for fps in frame_rates):
             print("All captures have same FPS.")
-
         else:
             print("FPS from all captures do not match. Check and try again.")
             sys.exit()
 
-        #Get video writer set up
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')     #select a fourcc to encode the video
+        # Set up video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0] * SPEED, output_shape)
 
-        out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0]*SPEED, output_shape)    # create VideoWriter object to save the output video
-
-        #Set start frames and counter to end video after the specified length of time
+        # Set start frames
         start_time = START_TIME * 1000
-        count = 0   
-
         for i, cap in enumerate(captures):
             cap.set(cv2.CAP_PROP_POS_MSEC, start_time + time_offsets[i])
 
-        while True and count <= LENGTH:
-            corrected_frames = []
-            for i, cap in enumerate(captures):
-                ret, frame = cap.read()
-                if frame is None or frame.size == 0:
-                    print(f"Warning: Frame {i} is empty or could not be read.")
-                    continue  # Skip processing this frame
+        # Function to process each frame
+        def process_frame(cap, homo_mat):
+            ret, frame = cap.read()
+            if frame is None or frame.size == 0:
+                print(f"Warning: Frame is empty or could not be read.")
+                return None
 
-                # Convert frames to UMat
-                uframe = cv2.UMat(frame)
+            # Convert frame to UMat and process
+            uframe = cv2.UMat(frame)
+            corrected_frame = cv2.warpPerspective(uframe, homo_mat, final_shape)
+            corrected_frame = cv2.resize(corrected_frame, compressed_shape)
+            return corrected_frame.get()
 
-                #Correct the frame
-                corrected_frame = cv2.warpPerspective(uframe, homo_mats[i], final_shape)
-                corrected_frame = cv2.resize(corrected_frame, compressed_shape)
-                corrected_frames.append(corrected_frame)
+        # Process frames in parallel
+        count = 0
+        while count <= LENGTH:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                corrected_frames = list(executor.map(process_frame, captures, homo_mats))
 
-            # Convert UMat back to numpy array for concatenation
-            for i, corrected_frame in enumerate(corrected_frames):
-                corrected_frame = corrected_frame.get()
+            # Filter out any None frames
+            corrected_frames = [f for f in corrected_frames if f is not None]
 
+            if corrected_frames:
+                merged = cv2.hconcat(corrected_frames)
+                out.write(merged)
 
-
-            merged = cv2.hconcat(corrected_frames)  #merge the four corrected frames together
-            out.write(merged)   #write the merged frame to new video
-
-            count += 1/frame_rates[0]
+            count += 1 / frame_rates[0]
             print(count)
 
         # Release video capture and writer objects
-        cap.release()
+        for cap in captures:
+            cap.release()
         out.release()
-
-        # Close all OpenCV windows
         cv2.destroyAllWindows()
