@@ -210,7 +210,8 @@ class Video_Functions():
                 homo_mat = homo_mats[i].astype(np.float32)
 
                 # Convert the homography matrix to GPU format
-                gpu_homo_mat = homo_mat
+                gpu_homo_mat = cv2.cuda_GpuMat()
+                gpu_homo_mat.upload(homo_mat)
 
                 # Upload the frame to GPU
                 gpu_frame = cv2.cuda_GpuMat()
@@ -220,16 +221,18 @@ class Video_Functions():
                 gpu_b, gpu_g, gpu_r = cv2.cuda.split(gpu_frame)
 
                 # Process each channel separately
-                gpu_b_corrected = cv2.cuda.warpPerspective(gpu_b, gpu_homo_mat, final_shape)
-                gpu_g_corrected = cv2.cuda.warpPerspective(gpu_g, gpu_homo_mat, final_shape)
-                gpu_r_corrected = cv2.cuda.warpPerspective(gpu_r, gpu_homo_mat, final_shape)
+                #gpu_b_corrected = cv2.cuda.warpPerspective(gpu_b, gpu_homo_mat, final_shape)
+                #gpu_g_corrected = cv2.cuda.warpPerspective(gpu_g, gpu_homo_mat, final_shape)
+                #gpu_r_corrected = cv2.cuda.warpPerspective(gpu_r, gpu_homo_mat, final_shape)
 
-                gpu_b_resized = cv2.cuda.resize(gpu_b_corrected, compressed_shape)
-                gpu_g_resized = cv2.cuda.resize(gpu_g_corrected, compressed_shape)
-                gpu_r_resized = cv2.cuda.resize(gpu_r_corrected, compressed_shape)
+                gpu_b_resized = cv2.cuda.resize(gpu_b, compressed_shape)
+                gpu_g_resized = cv2.cuda.resize(gpu_g, compressed_shape)
+                gpu_r_resized = cv2.cuda.resize(gpu_r, compressed_shape)
 
                 # Merge the corrected and resized channels back into a single frame
                 corrected_frame = cv2.cuda.merge([gpu_b_resized, gpu_g_resized, gpu_r_resized])
+
+                print(type(gpu_corrected_frame))
 
 
                 corrected_frames.append(corrected_frame)
