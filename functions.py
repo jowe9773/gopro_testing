@@ -7,6 +7,7 @@ import csv
 import tkinter as tk
 from tkinter import filedialog
 import tempfile
+import sys
 import moviepy.editor as mp
 from scipy.signal import correlate
 from scipy.io import wavfile
@@ -117,7 +118,7 @@ class Audio_Functions():
         time_offset = lag / rate1 * 1000
 
         return time_offset
-    
+
 class Video_Functions():
     def __init__(self):
         print("Initialized Video_Functions.")
@@ -141,12 +142,66 @@ class Video_Functions():
         h_matrix = cv2.findHomography(src_pts, dst_pts)
 
         return h_matrix[0]
-    
-    def process_frame(self, frame, matrix, final_shape, compressed_shape):
-        """Method for taking a raw frame from a single video and correcting it.""" 
 
-        corrected_frame = cv2.warpPerspective(frame, matrix, final_shape)
-        corrected_frame = cv2.resize(corrected_frame, compressed_shape)
-        return corrected_frame
-    
+    def frame_to_umat_frame(self, frame):
+        uframe = cv2.UMat(frame)
+        return uframe
 
+    def orthomosaicing(self, captures, time_offsets, homo_mats, out_vid_dn, OUT_NAME, SPEED, START_TIME, LENGTH, COMPRESSION):
+            #Describe shape
+        final_shape = [2438, 4000]
+        compressed_shape = (int(final_shape[0]/COMPRESSION), int(final_shape[1]/COMPRESSION))
+        output_shape = (compressed_shape[0]*4, compressed_shape[1])
+        print("out Shape: ", output_shape)
+
+        #Find frame rates for the videos and ensure that they match
+        frame_rates = []
+        for i, cap in enumerate(captures):
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_rates.append(fps)
+
+        fps_check = all(x == frame_rates[0] for x in frame_rates) #ensures matching fps for all videos
+
+        if fps_check is True:
+            print("All captures have same FPS.")
+
+        else:
+            print("FPS from all captures do not match. Check and try again.")
+            sys.exit()
+
+        #Get video writer set up
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')     #select a fourcc to encode the video
+
+        out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0]*SPEED, output_shape)    # create VideoWriter object to save the output video
+
+        #Set start frames and counter to end video after the specified length of time
+        start_time = START_TIME * 1000
+        count = 0   
+
+        for i, cap in enumerate(captures):
+            cap.set(cv2.CAP_PROP_POS_MSEC, start_time + time_offsets[i])
+
+        while True and count <= LENGTH:
+            corrected_frames = []
+            for i, cap in enumerate(captures):
+                ret, frame = cap.read()
+                if frame is None or frame.size == 0:
+                    print(f"Warning: Frame {i} is empty or could not be read.")
+                    continue  # Skip processing this frame\
+
+                corrected_frame = cv2.warpPerspective(frame, homo_mats[i], final_shape)
+                corrected_frame = cv2.resize(corrected_frame, compressed_shape)
+                corrected_frames.append(corrected_frame)
+
+            merged = cv2.hconcat(corrected_frames)  #merge the four corrected frames together
+            out.write(merged)   #write the merged frame to new video
+
+            count += 1/frame_rates[0]
+            print(count)
+
+        # Release video capture and writer objects
+        cap.release()
+        out.release()
+
+        # Close all OpenCV windows
+        cv2.destroyAllWindows()
