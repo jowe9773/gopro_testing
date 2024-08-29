@@ -13,6 +13,8 @@ from scipy.signal import correlate
 from scipy.io import wavfile
 import cv2
 import numpy as np
+import asyncio
+import concurrent.futures
 
 
 
@@ -76,11 +78,16 @@ class File_Functions():
     
 class Audio_Functions():
     def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.executor = concurrent.futures.ThreadPoolExecutor()
         print("Initialized Audio_Functions")
 
-    def extract_audio(self, video_path):
-        """this method extracts audio from an mp4 and saves it as a tempoorary wav file."""
+    async def extract_audio_async(self, video_path):
+        """Asynchronously extract audio from an MP4 and save it as a temporary WAV file."""
+        return await self.loop.run_in_executor(self.executor, self.extract_audio, video_path)
 
+    def extract_audio(self, video_path):
+        """This method extracts audio from an MP4 and saves it as a temporary WAV file."""
         print(video_path)
         clip = mp.VideoFileClip(video_path)
         audio = clip.audio
@@ -88,13 +95,18 @@ class Audio_Functions():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
             temp_audio_path = temp_audio_file.name
         audio.write_audiofile(temp_audio_path, codec='pcm_s16le')
-        rate, audio = wavfile.read(temp_audio_path)
+        rate, audio_data = wavfile.read(temp_audio_path)
         clip.reader.close()
-        return rate, audio
+        return rate, audio_data
+
+    async def extract_all_audios(self, video_paths):
+        """Run extract_audio asynchronously for a list of video paths."""
+        tasks = [self.extract_audio_async(video_path) for video_path in video_paths]
+        return await asyncio.gather(*tasks)
 
     def find_time_offset(self, rate1, audio1, rate2, audio2):
-        """This function compares two audiofiles and lines up the wave patterns to match in time.
-        Retuns the time offset."""
+        """This function compares two audio files and lines up the wave patterns to match in time.
+        Returns the time offset."""
 
         # Ensure the sample rates are the same
         if rate1 != rate2:
@@ -118,6 +130,21 @@ class Audio_Functions():
         time_offset = lag / rate1 * 1000
 
         return time_offset
+
+    def find_all_offsets(self, rate_data, audio_data):
+        """Find time offsets between the first audio and the others concurrently."""
+        tasks = []
+        for i in range(1, len(audio_data)):
+            task = self.executor.submit(self.find_time_offset, rate_data[i], audio_data[i], rate_data[0], audio_data[0])
+            tasks.append(task)
+
+        time_offsets = [0]
+        for i, task in enumerate(tasks):
+            offset = task.result()
+            time_offsets.append(offset)
+            print(f"Offset between video 1 and video {i+2} found")
+
+        return time_offsets
 
 class Video_Functions():
     def __init__(self):

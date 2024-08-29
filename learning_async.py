@@ -2,6 +2,7 @@
 
 "import packages and modules"
 import cv2
+import asyncio
 from functions import File_Functions, Video_Functions, Audio_Functions
 
 
@@ -46,17 +47,20 @@ if __name__ == "__main__":
     #Generate time offsets
     rate_data = []
     audio_data = []
-    for i, vid in enumerate(videos):
-        rate, audio = af.extract_audio(vid)
-        rate_data.append(rate)
-        audio_data.append(audio)
+    loop = asyncio.get_event_loop()
+    rates_and_audios = loop.run_until_complete(af.extract_all_audios(videos))
+    print(rates_and_audios)
 
-    time_offsets = []
-    for i, audio in enumerate(audio_data):
-        offset = af.find_time_offset(rate_data[i], audio_data[i], rate_data[0], audio_data[0])
-        time_offsets.append(offset)
-        print(f"Offset between video {1} and video {i+2} found")
+    for i, tup in enumerate(rates_and_audios):
+        print(i)
+        print(tup)
+        rate_data.append(tup[0])
+        audio_data.append(tup[1])
 
+    print(rate_data)
+
+    #find time offsets
+    time_offsets = af.find_all_offsets(rate_data, audio_data)
     print(time_offsets)
 
 
