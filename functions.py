@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import asyncio
 import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor
 
 
 
@@ -174,10 +175,34 @@ class Video_Functions():
         uframe = cv2.UMat(frame)
         return uframe
 
+    def process_frame(self, i, cap, homo_mat, final_shape, compressed_shape):
+        ret, frame = cap.read()
+        if frame is None or frame.size == 0:
+            print(f"Warning: Frame {i} is empty or could not be read.")
+            return None  # Skip processing this frame
+
+        # Ensure homography matrix is in CV_32F format
+        homo_mat = homo_mat.astype(np.float32)
+
+        # Convert the homography matrix to GPU format
+        gpu_homo_mat = homo_mat
+
+        # Upload the frame to GPU
+        gpu_frame = cv2.cuda_GpuMat()
+        gpu_frame.upload(frame)
+
+        # Process each channel separately
+        gpu_corrected = cv2.cuda.warpPerspective(gpu_frame, gpu_homo_mat, final_shape)
+
+        gpu_resized = cv2.cuda.resize(gpu_corrected, compressed_shape)
+
+        corrected_frame = gpu_resized.download()
+        return corrected_frame
+
     def orthomosaicing(self, captures, time_offsets, homo_mats, out_vid_dn, OUT_NAME, SPEED, START_TIME, LENGTH, COMPRESSION):
         final_shape = [2438, 4000]
-        compressed_shape = (int(final_shape[0]/COMPRESSION), int(final_shape[1]/COMPRESSION))
-        output_shape = (compressed_shape[0]*4, compressed_shape[1])
+        compressed_shape = (int(final_shape[0] / COMPRESSION), int(final_shape[1] / COMPRESSION))
+        output_shape = (compressed_shape[0] * 4, compressed_shape[1])
         print("out Shape: ", output_shape)
 
         # Verify frame rates for the videos and ensure they match
@@ -190,56 +215,28 @@ class Video_Functions():
 
         # Set up the video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0]*SPEED, output_shape)
+        out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0] * SPEED, output_shape)
 
         start_time = START_TIME * 1000
-        count = 0   
+        count = 0
 
         for i, cap in enumerate(captures):
             cap.set(cv2.CAP_PROP_POS_MSEC, start_time + time_offsets[i])
 
-        while count <= LENGTH:
-            corrected_frames = []
-            for i, cap in enumerate(captures):
-                ret, frame = cap.read()
-                if frame is None or frame.size == 0:
-                    print(f"Warning: Frame {i} is empty or could not be read.")
-                    continue  # Skip processing this frame
+        with ProcessPoolExecutor() as executor:
+            while count <= LENGTH:
+                futures = []
+                for i, cap in enumerate(captures):
+                    futures.append(executor.submit(self.process_frame, i, cap, homo_mats[i], final_shape, compressed_shape))
 
-                # Ensure homography matrix is in CV_32F format
-                homo_mat = homo_mats[i].astype(np.float32)
+                corrected_frames = [future.result() for future in futures if future.result() is not None]
 
-                # Convert the homography matrix to GPU format
-                gpu_homo_mat = homo_mat
+                if corrected_frames:
+                    merged = cv2.hconcat(corrected_frames)  # Merge the four corrected frames together
+                    out.write(merged)  # Write the merged frame to the new video
 
-                # Upload the frame to GPU
-                gpu_frame = cv2.cuda_GpuMat()
-                gpu_frame.upload(frame)
-
-                # Split the frame into three channels (assuming the frame is in BGR format)
-                gpu_b, gpu_g, gpu_r = cv2.cuda.split(gpu_frame)
-
-                # Process each channel separately
-                gpu_b_corrected = cv2.cuda.warpPerspective(gpu_b, gpu_homo_mat, final_shape)
-                gpu_g_corrected = cv2.cuda.warpPerspective(gpu_g, gpu_homo_mat, final_shape)
-                gpu_r_corrected = cv2.cuda.warpPerspective(gpu_r, gpu_homo_mat, final_shape)
-
-                gpu_b_resized = cv2.cuda.resize(gpu_b_corrected, compressed_shape)
-                gpu_g_resized = cv2.cuda.resize(gpu_g_corrected, compressed_shape)
-                gpu_r_resized = cv2.cuda.resize(gpu_r_corrected, compressed_shape)
-
-                # Merge the corrected and resized channels back into a single frame
-                corrected_frame = cv2.cuda.merge([gpu_b_resized, gpu_g_resized, gpu_r_resized])
-
-
-                corrected_frames.append(corrected_frame)
-
-            if corrected_frames:
-                merged = cv2.hconcat(corrected_frames)  # Merge the four corrected frames together
-                out.write(merged)   # Write the merged frame to the new video
-
-            count += 1/frame_rates[0]
-            print(count)
+                count += 1 / frame_rates[0]
+                print(count)
 
         # Release video capture and writer objects
         for cap in captures:
