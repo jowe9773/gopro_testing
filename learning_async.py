@@ -1,6 +1,7 @@
 #learning_async.py
 
 "import packages and modules"
+import time
 import cv2
 import asyncio
 from functions import File_Functions, Video_Functions, Audio_Functions
@@ -14,11 +15,11 @@ if __name__ == "__main__":
     vf = Video_Functions()
 
     #define important variables
-    COMPRESSION = 5
+    COMPRESSION = 4
     SPEED = 1
-    START_TIME = 56
+    START_TIME = 0
     LENGTH = 10
-    OUT_NAME = "test.mp4"
+    OUT_NAME = "test_comp1-5.mp4"
 
     #load video files:
     vid1 = ff.load_fn("Select video from camera 1")
@@ -44,6 +45,9 @@ if __name__ == "__main__":
     #choose an output location for the final video
     out_vid_dn = ff.load_dn("Select output location for the final video")
 
+    # Start measuring time
+    start_time = time.time()
+
     #Generate time offsets
     rate_data = []
     audio_data = []
@@ -63,13 +67,14 @@ if __name__ == "__main__":
     print("Time offsets for video streams:")
     print(time_offsets)
 
+    # Start measuring time
+    start_vid_time = time.time()
 
     #Generate homography matricies
     homo_mats = []
     for i, vid in enumerate(videos):
         homography = vf.find_homography(i+1, targets[i])
         homo_mats.append(homography)
-
 
     #Open capture for each video stream
     captures = []
@@ -78,3 +83,13 @@ if __name__ == "__main__":
         captures.append(cap)
 
     vf.orthomosaicing(captures, time_offsets, homo_mats, out_vid_dn, OUT_NAME, SPEED, START_TIME, LENGTH, COMPRESSION)
+
+    # End measuring time
+    end_time = time.time()
+
+    # Calculate and print the elapsed time
+    elapsed_time = end_time - start_time
+    video_time = end_time - start_vid_time
+
+    print(f"Total time taken: {elapsed_time:.2f} seconds")
+    print(f"Time taken to process frames: {video_time:.2f} seconds")

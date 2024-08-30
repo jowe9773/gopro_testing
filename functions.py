@@ -190,7 +190,7 @@ class Video_Functions():
             sys.exit()
 
         # Set up video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'x264')
         out = cv2.VideoWriter(out_vid_dn + "/" + OUT_NAME, fourcc, frame_rates[0] * SPEED, output_shape)
 
         # Set start frames
