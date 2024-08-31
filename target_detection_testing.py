@@ -57,19 +57,30 @@ def find_and_draw_contours(original_image, edges, aspect_ratio_thresh=0.15, min_
         x, y, w, h = cv2.boundingRect(contour)
         aspect_ratio = float(w) / h
         bounding_box_area = w * h
-        area = cv2.contourArea(contour)
+        box = cv2.minAreaRect(contour)
+        box_area = box[1][0] * box[1][1]  # width * height
         
-        if abs(aspect_ratio - 1) < aspect_ratio_thresh and min_area <= bounding_box_area <= max_area:
+        if abs(aspect_ratio - 1) < aspect_ratio_thresh and min_area <= bounding_box_area <= max_area and bounding_box_area*0.9 < box_area:
+            # Get the four points of the rectangle
+            box_points = cv2.boxPoints(box)
+            box_points = np.int64(box_points)  # Convert to integer
+
             # Draw contour in green
             cv2.drawContours(result_image, [contour], -1, (0, 255, 0), 2)
+            
             # Draw bounding box in blue
             cv2.rectangle(result_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+            # Draw the rotated rectangle in blue
+            cv2.drawContours(result_image, [box_points], 0, (255, 0, 255), 2)
+            
             # Draw center dot
             center_x = int(x + w / 2)
             center_y = int(y + h / 2)
             cv2.circle(result_image, (center_x, center_y), 5, (0, 0, 255), -1)  # Red dot with radius 5
     
     return result_image
+
 
 # Function to scale down the frame for display
 def scale_down_frame(frame, max_width=800, max_height=600):
