@@ -2,8 +2,8 @@
 
 "import packages and modules"
 import time
-import cv2
 import asyncio
+import cv2
 from functions import File_Functions, Video_Functions, Audio_Functions
 
 
@@ -18,8 +18,8 @@ if __name__ == "__main__":
     COMPRESSION = 4
     SPEED = 1
     START_TIME = 0
-    LENGTH = 10
-    OUT_NAME = "test_comp1-5.mp4"
+    LENGTH = 30
+    OUT_NAME = "test_baseline.mp4"
 
     #load video files:
     vid1 = ff.load_fn("Select video from camera 1")
