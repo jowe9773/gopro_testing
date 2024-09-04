@@ -49,9 +49,9 @@ def apply_canny_edge(image):
 # Function to identify contours and draw on the original image
 def find_and_draw_contours(original_image, edges, aspect_ratio_thresh=0.15, min_area=4000, max_area=7000):
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
     result_image = original_image.copy()
-    
+
     # Filter contours by aspect ratio and bounding box area
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
@@ -59,7 +59,7 @@ def find_and_draw_contours(original_image, edges, aspect_ratio_thresh=0.15, min_
         bounding_box_area = w * h
         box = cv2.minAreaRect(contour)
         box_area = box[1][0] * box[1][1]  # width * height
-        
+
         if abs(aspect_ratio - 1) < aspect_ratio_thresh and min_area <= bounding_box_area <= max_area and bounding_box_area*0.5 < box_area:
             # Get the four points of the rectangle
             box_points = cv2.boxPoints(box)
@@ -67,18 +67,18 @@ def find_and_draw_contours(original_image, edges, aspect_ratio_thresh=0.15, min_
 
             # Draw contour in green
             cv2.drawContours(result_image, [contour], -1, (0, 255, 0), 2)
-            
+
             # Draw bounding box in blue
             cv2.rectangle(result_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
             # Draw the rotated rectangle in blue
             cv2.drawContours(result_image, [box_points], 0, (255, 0, 255), 2)
-            
+
             # Draw center dot
             center_x = int(x + w / 2)
             center_y = int(y + h / 2)
             cv2.circle(result_image, (center_x, center_y), 5, (0, 0, 255), -1)  # Red dot with radius 5
-    
+
     return result_image
 
 
@@ -97,16 +97,16 @@ if __name__ == "__main__":
 
     # Average frames to get a single representative frame
     avg_frame = average_frames(video_path, num_frames=300)
-    normalized_frame = clahe_normalization(avg_frame)
+    normalized_frame = normalize_brightness(avg_frame)
     blurred_frame = apply_gaussian_blur(normalized_frame, kernel_size=9)
     edges = apply_canny_edge(blurred_frame)
-    
+
     # Find and draw contours based on bounding box area and aspect ratio
     result_image = find_and_draw_contours(avg_frame, edges, aspect_ratio_thresh=0.15, min_area=4000, max_area=7000)
-    
+
     # Scale down image to fit the screen
     scaled_image = scale_down_frame(result_image, max_width=800, max_height=600)
-    
+
     # Display the result image
     cv2.imshow("Contours and Bounding Boxes", scaled_image)
     cv2.waitKey(0)
